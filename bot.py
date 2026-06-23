@@ -1999,8 +1999,9 @@ async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
     respuesta = await asyncio.to_thread(ejecutar_reset_mensual, usuario_nombre)
     await update.message.reply_text(respuesta, parse_mode=None)
 
-# ==================== WEBHOOK + FLASK ====================
-app = None  # Variable global para la aplicación de Telegram
+# ==================== WEBHOOK + FLASK (SIN ASYNC) ====================
+from flask import Flask, request
+import json
 
 flask_app = Flask(__name__)
 
@@ -2014,30 +2015,46 @@ def ping():
 
 @flask_app.route('/webhook', methods=['POST'])
 def webhook():
-    """Recibe los updates de Telegram vía webhook (versión síncrona)."""
+    """Procesa el update de forma síncrona."""
     try:
         json_data = request.get_json(force=True)
-        update = Update.de_json(json_data, app.bot)
+        # Usar el bot directamente sin Application
+        # Creamos un update manualmente y lo procesamos con el dispatcher
+        update = Update.de_json(json_data, None)  # sin bot por ahora
         
-        # Ejecutar el handler async en un nuevo event loop
-        asyncio.run(app.process_update(update))
+        # Usamos el loop de asyncio para ejecutar el handler
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        # Creamos una aplicación temporal solo para este update
+        # Pero mejor: usamos la aplicación global ya inicializada
+        global app
+        if app is not None:
+            # Aseguramos que app esté inicializada
+            loop.run_until_complete(app.process_update(update))
+        else:
+            log.error("La aplicación no está inicializada")
+        loop.close()
         return 'OK', 200
     except Exception as e:
         log.error(f"Error en webhook: {e}")
         return 'Error', 500
 
-def setup_webhook():
-    """Configura el webhook en Telegram."""
+def setup_webhook_sync():
+    """Configura webhook de forma síncrona."""
     if not WEBHOOK_URL:
-        log.error("WEBHOOK_URL no está definida en variables de entorno.")
+        log.error("WEBHOOK_URL no definida")
         return False
     webhook_endpoint = f"{WEBHOOK_URL}/webhook"
     log.info(f"Configurando webhook en: {webhook_endpoint}")
     try:
-        asyncio.run(app.bot.set_webhook(
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(app.bot.set_webhook(
             url=webhook_endpoint,
             drop_pending_updates=True
         ))
+        loop.close()
         log.info("✅ Webhook configurado correctamente.")
         return True
     except Exception as e:
@@ -2046,19 +2063,28 @@ def setup_webhook():
 
 def main():
     global app
-    # Crear la aplicación de Telegram
+    # Creamos la aplicación de Telegram
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     
-    # Registrar todos los handlers
+    # Registramos todos los handlers
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler(["ayuda", "help"], cmd_ayuda))
     app.add_handler(CommandHandler("reset", cmd_reset))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    # Configurar webhook
-    setup_webhook()
+    # Inicializamos la aplicación en el loop principal
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(app.initialize())
+    loop.run_until_complete(app.start())
+    # No cerramos el loop, lo usamos para webhook
     
-    # Iniciar Flask (el webhook recibe los mensajes)
+    # Configuramos webhook
+    setup_webhook_sync()
+    
+    log.info("✅ Bot listo y esperando mensajes vía webhook...")
+    
+    # Iniciamos Flask en el hilo principal
     port = int(os.environ.get("PORT", 10000))
     flask_app.run(host="0.0.0.0", port=port)
 
