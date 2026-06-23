@@ -2356,6 +2356,9 @@ def run_bot():
     app.add_handler(CommandHandler("reset", cmd_reset))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
+    # 🔥 NUEVA LÍNEA: Forzar eliminación del webhook
+    loop.run_until_complete(app.bot.delete_webhook(drop_pending_updates=True))
+    
     log.info("Bot iniciado. Esperando mensajes...")
     
     # Iniciar el bot y mantenerlo corriendo
