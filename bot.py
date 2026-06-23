@@ -2322,8 +2322,8 @@ async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(respuesta, parse_mode=None)
 
 
-# ==================== WEBHOOK + FLASK (NUEVO) ====================
-app = None
+# ==================== WEBHOOK + FLASK ====================
+app = None  # Variable global para la aplicación de Telegram
 
 flask_app = Flask(__name__)
 
@@ -2337,14 +2337,13 @@ def ping():
 
 @flask_app.route('/webhook', methods=['POST'])
 def webhook():
+    """Recibe los updates de Telegram vía webhook."""
     try:
         json_data = request.get_json(force=True)
         update = Update.de_json(json_data, app.bot)
         
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(app.process_update(update))
-        loop.close()
+        # asyncio.run() maneja el loop automáticamente
+        asyncio.run(app.process_update(update))
         
         return 'OK', 200
     except Exception as e:
@@ -2352,19 +2351,17 @@ def webhook():
         return 'Error', 500
 
 def setup_webhook():
+    """Configura el webhook en Telegram."""
     if not WEBHOOK_URL:
-        log.error("WEBHOOK_URL no está definida.")
+        log.error("WEBHOOK_URL no está definida en variables de entorno.")
         return False
     webhook_endpoint = f"{WEBHOOK_URL}/webhook"
     log.info(f"Configurando webhook en: {webhook_endpoint}")
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(app.bot.set_webhook(
+        asyncio.run(app.bot.set_webhook(
             url=webhook_endpoint,
             drop_pending_updates=True
         ))
-        loop.close()
         log.info("✅ Webhook configurado correctamente.")
         return True
     except Exception as e:
@@ -2373,23 +2370,25 @@ def setup_webhook():
 
 def main():
     global app
+    # Crear la aplicación de Telegram
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     
+    # Registrar todos los handlers
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler(["ayuda", "help"], cmd_ayuda))
     app.add_handler(CommandHandler("reset", cmd_reset))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     # Inicializar la aplicación
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(app.initialize())
-    loop.run_until_complete(app.start())
-    loop.close()
+    asyncio.run(app.initialize())
+    asyncio.run(app.start())
     
+    # Configurar webhook
     setup_webhook()
+    
     log.info("✅ Bot listo y esperando mensajes vía webhook...")
     
+    # Iniciar Flask
     port = int(os.environ.get("PORT", 10000))
     flask_app.run(host="0.0.0.0", port=port)
 
