@@ -2157,7 +2157,9 @@ async def handle_seleccion_numero(update: Update, context: ContextTypes.DEFAULT_
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    log.info(f"Mensaje recibido de {update.effective_user.username}: {update.message.text}") # <-- Línea NUEVA
     inicio = time.time()
+    # ... resto de tu código ...
     texto = update.message.text or ""
     usuario = update.effective_user
     usuario_nombre = usuario.username or usuario.first_name or "desconocido"
