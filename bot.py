@@ -32,7 +32,7 @@ from telegram.ext import (
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GOOGLE_SHEET_ID = os.getenv("GOOGLE_SHEET_ID")
-CREDS_FILE = os.getenv("CREDS_FILE")
+CREDS_FILE = os.getenv("CREDS_FILE", "creds_nuevo.json")
 RESET_PASSWORD = os.getenv("RESET_PASSWORD")
 ACCESS_PASSWORD = os.getenv("ACCESS_PASSWORD")
 
