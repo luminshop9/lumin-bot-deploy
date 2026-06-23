@@ -10,6 +10,7 @@ import re
 import json
 import time
 import random
+import threading
 import unicodedata
 import logging
 import asyncio
@@ -2324,6 +2325,7 @@ async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ==================== WEBHOOK + FLASK ====================
 app = None  # Variable global para la aplicación de Telegram
+loop = None  # Event loop principal para el bot
 
 flask_app = Flask(__name__)
 
@@ -2338,36 +2340,32 @@ def ping():
 @flask_app.route('/webhook', methods=['POST'])
 def webhook():
     """Recibe los updates de Telegram vía webhook."""
+    global loop
     try:
         json_data = request.get_json(force=True)
         update = Update.de_json(json_data, app.bot)
-        # asyncio.run() maneja el loop automáticamente y espera a que todas las tareas terminen
-        asyncio.run(app.process_update(update))
+        
+        # Enviar la tarea al loop principal
+        future = asyncio.run_coroutine_threadsafe(
+            app.process_update(update),
+            loop
+        )
+        # Esperar a que termine (opcional, pero recomendado)
+        future.result(timeout=30)
+        
         return 'OK', 200
     except Exception as e:
         log.error(f"Error en webhook: {e}")
         return 'Error', 500
 
-def setup_webhook():
-    """Configura el webhook en Telegram."""
-    if not WEBHOOK_URL:
-        log.error("WEBHOOK_URL no está definida en variables de entorno.")
-        return False
-    webhook_endpoint = f"{WEBHOOK_URL}/webhook"
-    log.info(f"Configurando webhook en: {webhook_endpoint}")
-    try:
-        asyncio.run(app.bot.set_webhook(
-            url=webhook_endpoint,
-            drop_pending_updates=True
-        ))
-        log.info("✅ Webhook configurado correctamente.")
-        return True
-    except Exception as e:
-        log.error(f"Error configurando webhook: {e}")
-        return False
-
-def main():
-    global app
+def run_bot():
+    """Ejecuta el bot en un loop separado."""
+    global app, loop
+    
+    # Crear un nuevo loop para el bot
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
     # Crear la aplicación de Telegram
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     
@@ -2377,18 +2375,32 @@ def main():
     app.add_handler(CommandHandler("reset", cmd_reset))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    # Inicializar la aplicación
-    asyncio.run(app.initialize())
-    asyncio.run(app.start())
+    # Inicializar y arrancar la aplicación
+    loop.run_until_complete(app.initialize())
+    loop.run_until_complete(app.start())
     
     # Configurar webhook
-    setup_webhook()
-    
+    webhook_endpoint = f"{WEBHOOK_URL}/webhook"
+    log.info(f"Configurando webhook en: {webhook_endpoint}")
+    loop.run_until_complete(app.bot.set_webhook(
+        url=webhook_endpoint,
+        drop_pending_updates=True
+    ))
+    log.info("✅ Webhook configurado correctamente.")
     log.info("✅ Bot listo y esperando mensajes vía webhook...")
     
-    # Iniciar Flask
+    # Mantener el loop corriendo para siempre
+    loop.run_forever()
+
+def main():
+    # Iniciar el bot en un hilo separado
+    bot_thread = threading.Thread(target=run_bot, daemon=True)
+    bot_thread.start()
+    
+    # Iniciar Flask en el hilo principal
     port = int(os.environ.get("PORT", 10000))
     flask_app.run(host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
+    import threading
     main()
