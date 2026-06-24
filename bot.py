@@ -155,21 +155,10 @@ def normalizar(texto):
         c for c in unicodedata.normalize("NFD", texto)
         if unicodedata.category(c) != "Mn"
     )
-    texto = re.sub(r"[^a-z0-9\s/,]", " ", texto)
+    # PERMITIR: letras, números, espacios, /, . y , (para precios decimales)
+    texto = re.sub(r"[^a-z0-9\s/.,]", " ", texto)
     texto = re.sub(r"\s+", " ", texto).strip()
     return texto
-
-
-def limpiar_segmento(texto):
-    return texto.strip(" ,") if texto else ""
-
-
-def limpiar_nombre_completo(nombre):
-    nombre = re.sub(r',\s*,', ',', nombre)
-    nombre = re.sub(r',\s*$', '', nombre)
-    nombre = re.sub(r'\s+', ' ', nombre).strip()
-    return nombre
-
 
 def limpiar_nombre_creacion(texto):
     t = re.sub(r"\s+", " ", texto.strip(" ,"))
